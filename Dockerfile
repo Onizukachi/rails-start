@@ -1,46 +1,29 @@
-# syntax=docker/dockerfile:1
+# syntax = docker/dockerfile:1
 
 # Make sure RUBY_VERSION matches the Ruby version in .ruby-version and Gemfile
 ARG RUBY_VERSION=3.2.2
-FROM registry.docker.com/library/ruby:$RUBY_VERSION-slim as base
+FROM registry.docker.com/library/ruby:$RUBY_VERSION-slim
 
-# OS Level Dependencies
-RUN --mount=type=cache,target=/var/cache/apt \
-  --mount=type=cache,target=/var/lib/apt,sharing=locked \
-  --mount=type=tmpfs,target=/var/log \
-  rm -f /etc/apt/apt.conf.d/docker-clean; \
-  echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache; \
-  apt-get update -qq \
-  && apt-get install -yq --no-install-recommends \
-    build-essential \
-    gnupg2 \
-    less \
-    git \
-    libpq-dev \
-    postgresql-client \
-    libvips \
-    curl
+# Rails app lives here
+WORKDIR /rails_app
 
-ENV LANG=C.UTF-8 \
-  BUNDLE_JOBS=4 \
-  BUNDLE_RETRY=3
-  
-WORKDIR /app
+# Install packages needed to build gems
+RUN apt-get update -qq && \
+  apt-get install --no-install-recommends -y build-essential git libpq-dev libvips pkg-config curl gnupg2 postgresql-client nano nodejs npm
 
-RUN gem update --system && gem install bundler
+RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
+RUN echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+RUN npm install --global yarn
 
-COPY Gemfile ./
-
-RUN bundle check || bundle install --jobs 20 --retry 5
-
+# Copy application code
 COPY . .
 
-RUN chmod +x ./entrypoints/docker-entrypoint.sh 
-RUN chmod +x ./entrypoints/sidekiq-entrypoint.sh
+RUN bundle install
+RUN gem install foreman
 
-# Run migrations
-ENTRYPOINT ["./entrypoints/docker-entrypoint.sh"]
+# Entrypoint prepares the database.
+ENTRYPOINT ["sh", "/rails_app/entrypoint.sh"]
 
+# Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
-
-CMD ["rails", "server", "-b", "0.0.0.0"]
+CMD ["bin/dev"]
