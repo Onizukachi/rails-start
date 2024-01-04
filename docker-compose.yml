@@ -3,7 +3,7 @@ services:
     build: .
     volumes:
       - bundle:/usr/local/bundle
-       - .:/app
+      - .:/rails_app
     ports:
       - "3001:3000"
     tty: true
